@@ -1,0 +1,15 @@
+services:
+  # Webサービスの定義
+  - type: web
+    name: my-app-service
+    env: node # または python, ruby, go, static, docker など
+    plan: free # 無料プラン。必要に応じて standard などに変更
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: my-database
+          property: connectionString
