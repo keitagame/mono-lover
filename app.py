@@ -5,60 +5,202 @@ import os
 PORT = 8000
 FILE_NAME = "post.txt"
 
+HTML = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Simple Chat</title>
+
+<style>
+body{
+    font-family:sans-serif;
+    background:#111;
+    color:white;
+    margin:0;
+    padding:20px;
+}
+
+#messages{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    margin-bottom:20px;
+}
+
+.msg{
+    background:#222;
+    padding:10px;
+    border-radius:10px;
+    max-width:400px;
+}
+
+.row{
+    display:flex;
+    gap:10px;
+}
+
+input{
+    flex:1;
+    padding:10px;
+}
+
+button{
+    padding:10px 20px;
+}
+</style>
+</head>
+<body>
+
+<h1>Chat</h1>
+
+<div id="messages"></div>
+
+<div class="row">
+    <input id="text" placeholder="message">
+    <button onclick="send()">送信</button>
+</div>
+
+<script>
+
+async function loadMessages(){
+    const res = await fetch("/messages");
+    const data = await res.json();
+
+    const container = document.getElementById("messages");
+    container.innerHTML = "";
+
+    data.messages.forEach(msg => {
+        const div = document.createElement("div");
+        div.className = "msg";
+        div.textContent = msg;
+        container.appendChild(div);
+    });
+
+    window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function send(){
+    const input = document.getElementById("text");
+    const message = input.value.trim();
+
+    if(!message) return;
+
+    await fetch("/post", {
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+            message
+        })
+    });
+
+    input.value = "";
+
+    loadMessages();
+}
+
+setInterval(loadMessages, 1000);
+
+loadMessages();
+
+</script>
+
+</body>
+</html>
+"""
+
 class Handler(BaseHTTPRequestHandler):
 
-    def _set_headers(self, content_type="application/json"):
+    def send_json(self, obj):
         self.send_response(200)
-        self.send_header("Content-type", content_type)
+        self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+        self.wfile.write(
+            json.dumps(obj).encode("utf-8")
+        )
+
     def do_OPTIONS(self):
-        self._set_headers()
-
-    def do_POST(self):
-        if self.path != "/post":
-            self.send_error(404)
-            return
-
-        content_length = int(self.headers["Content-Length"])
-        body = self.rfile.read(content_length)
-
-        try:
-            data = json.loads(body)
-            message = data.get("message", "")
-
-            with open(FILE_NAME, "a", encoding="utf-8") as f:
-                f.write(message.replace("\n", " ") + "\n")
-
-            self._set_headers()
-            self.wfile.write(json.dumps({
-                "status": "ok"
-            }).encode("utf-8"))
-
-        except Exception as e:
-            self.send_error(500, str(e))
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.end_headers()
 
     def do_GET(self):
-        if self.path != "/messages":
-            self.send_error(404)
+
+        # HTML表示
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+
+            self.wfile.write(
+                HTML.encode("utf-8")
+            )
             return
 
-        if not os.path.exists(FILE_NAME):
-            open(FILE_NAME, "w", encoding="utf-8").close()
+        # メッセージ取得
+        if self.path == "/messages":
 
-        with open(FILE_NAME, "r", encoding="utf-8") as f:
-            lines = [line.rstrip("\n") for line in f]
+            if not os.path.exists(FILE_NAME):
+                open(FILE_NAME, "w", encoding="utf-8").close()
 
-        self._set_headers()
+            with open(FILE_NAME, "r", encoding="utf-8") as f:
+                lines = [
+                    line.rstrip("\\n")
+                    for line in f
+                ]
 
-        self.wfile.write(json.dumps({
-            "messages": lines
-        }).encode("utf-8"))
+            self.send_json({
+                "messages": lines
+            })
+            return
+
+        self.send_error(404)
+
+    def do_POST(self):
+
+        # メッセージ投稿
+        if self.path == "/post":
+
+            content_length = int(
+                self.headers["Content-Length"]
+            )
+
+            body = self.rfile.read(content_length)
+
+            try:
+                data = json.loads(body)
+
+                message = data.get("message", "")
+
+                message = message.replace("\\n", " ")
+
+                with open(FILE_NAME, "a", encoding="utf-8") as f:
+                    f.write(message + "\\n")
+
+                self.send_json({
+                    "status": "ok"
+                })
+
+            except Exception as e:
+                self.send_error(500, str(e))
+
+            return
+
+        self.send_error(404)
 
 if __name__ == "__main__":
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Server running on http://localhost:{PORT}")
+
+    server = HTTPServer(
+        ("0.0.0.0", PORT),
+        Handler
+    )
+
+    print(f"http://localhost:{PORT}")
+
     server.serve_forever()
