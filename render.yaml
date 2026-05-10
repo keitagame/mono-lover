@@ -4,6 +4,6 @@ services:
     env: python
     plan: free   # 有料にするなら「starter」や「standard」
     buildCommand: |
-      apt-get update && apt-get install -y ffmpeg
+      echo "a"
       
     startCommand: python app.py
